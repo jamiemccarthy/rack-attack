@@ -68,6 +68,8 @@ describe "#throttle" do
     weight_proc = lambda do |request|
       if request.env["X-APIKey"] == "private-secret"
         3
+      elsif request.env["X-Lightweight"].present?
+	0
       else
         2
       end
@@ -80,11 +82,23 @@ describe "#throttle" do
 
     assert_equal 200, last_response.status
 
+    2.times do
+      get "/", {}, "REMOTE_ADDR" => "1.2.3.4", "X-Lightweight" => "1"
+
+      assert_equal 200, last_response.status
+    end
+
     get "/", {}, "REMOTE_ADDR" => "1.2.3.4"
 
     assert_equal 200, last_response.status
 
     get "/", {}, "REMOTE_ADDR" => "1.2.3.4"
+
+    assert_equal 429, last_response.status
+    assert_nil last_response.headers["Retry-After"]
+    assert_equal "Retry later\n", last_response.body
+
+    get "/", {}, "REMOTE_ADDR" => "1.2.3.4", "X-Lightweight" => "1"
 
     assert_equal 429, last_response.status
     assert_nil last_response.headers["Retry-After"]
@@ -102,6 +116,12 @@ describe "#throttle" do
 
     Timecop.travel(60) do
       get "/", {}, "REMOTE_ADDR" => "1.2.3.4"
+
+      assert_equal 200, last_response.status
+    end
+
+    5.times do
+      get "/", {}, "REMOTE_ADDR" => "9.10.11.12", "X-Lightweight" => "1"
 
       assert_equal 200, last_response.status
     end
